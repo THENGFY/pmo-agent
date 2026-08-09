@@ -820,8 +820,14 @@ a{text-decoration:none;color:inherit}
               padding:4px;border-radius:4px;flex-shrink:0}
 #collapse-btn:hover{background:var(--surface-container)}
 .collapsed #collapse-btn{margin-left:0}
+#sidebar-open-btn{display:none;position:fixed;top:16px;left:0;z-index:200;
+                   background:var(--surface-container-lowest);border:1px solid var(--border-subtle);
+                   border-left:none;border-radius:0 6px 6px 0;padding:8px 10px;
+                   cursor:pointer;color:var(--on-surface-variant);font-size:14px;
+                   box-shadow:2px 0 8px rgba(0,0,0,.10);transition:background .15s,color .15s}
+#sidebar-open-btn:hover{{background:var(--surface-container);color:var(--on-surface)}}
 .nav-section{padding:12px 10px}
-.nav-label{font-size:10px;letter-spacing:.08em;color:var(--on-surface-variant);padding:4px 10px;white-space:nowrap}
+.nav-label{font-size:10px;letter-spacing:.08em;color:var(--on-surface-variant);padding:4px 10px;white-space:nowrap;font-weight:700}
 .collapsed .nav-label{display:none}
 .nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:var(--on-surface-variant);
           font-size:12.5px;white-space:nowrap;cursor:pointer;margin-bottom:2px}
@@ -948,7 +954,7 @@ details.collapse-section{margin-bottom:16px}
 details.collapse-section summary{cursor:pointer;font-size:13px;font-weight:700;padding:10px 0;list-style:none;
     display:flex;align-items:center;gap:8px}
 details.collapse-section summary::-webkit-details-marker{display:none}
-details.collapse-section summary .chev{transition:transform .15s}
+details.collapse-section summary .chev{transition:transform .15s;font-size:36px;line-height:1}
 details.collapse-section[open] summary .chev{transform:rotate(90deg)}
 .case-btn{border:1px solid var(--border-subtle);background:#fff;border-radius:4px;padding:6px 12px;
           font-size:11px;font-family:inherit;cursor:pointer;margin-right:6px;margin-bottom:10px}
@@ -974,6 +980,7 @@ html_out = f"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>{CSS}</style></head>
 <body>
+<button id="sidebar-open-btn" onclick="toggleSidebar()" title="Open sidebar">⟩⟩</button>
 <div id="sidebar">
   <div id="sb-head">
     <div class="logo">◈</div>
@@ -1008,7 +1015,7 @@ html_out = f"""<!DOCTYPE html>
 
     <div class="view active" id="view-dashboard">
       <div id="kpi-row">
-        <div class="kpi-card"><div class="label">TOTAL PROJECTS</div>
+        <div class="kpi-card"><div class="label">TOTAL PROJECTS IN PIPELINE</div>
           <div class="value">{total_projects}</div>
           <div class="foot">every status, whole portfolio</div></div>
         <div class="kpi-card"><div class="label">PORTFOLIO VALUE</div>
@@ -1132,7 +1139,9 @@ var docCounter = 0;
 function toggleSidebar(){{
   var sb = document.getElementById('sidebar');
   sb.classList.toggle('collapsed');
-  document.getElementById('collapse-btn').innerText = sb.classList.contains('collapsed') ? '⟩⟩' : '⟨⟨';
+  var isCollapsed = sb.classList.contains('collapsed');
+  document.getElementById('collapse-btn').innerText = isCollapsed ? '⟩⟩' : '⟨⟨';
+  document.getElementById('sidebar-open-btn').style.display = isCollapsed ? 'block' : 'none';
 }}
 var toastTimer = null;
 function toast(msg){{

@@ -70,6 +70,7 @@ from src.orchestration.pipeline import Gate2OverrideRequiredError
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DASHBOARD_DIR = os.path.join(REPO_ROOT, "dashboard")
+PREVIEW_FILE = os.path.join(REPO_ROOT, "Design file", "ui_preview", "dashboard_preview.html")
 PORT = 8765
 
 # ── Persistent PENDING / RESOLVED ────────────────────────────────────────────
@@ -537,9 +538,19 @@ real Manual Gate 3 for PMO to accept, decline, or cancel the project.</div>
       <div class="brand-dot"></div>
       <span>PMO Agent &mdash; Notifications</span>
     </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <a href="/preview" target="_blank" id="preview-btn"
+         style="background:var(--surface-3);color:var(--text-2);border:1px solid var(--border-2);
+                border-radius:6px;padding:5px 10px;font-size:11px;font-weight:500;
+                text-decoration:none;transition:all .15s;white-space:nowrap;"
+         onmouseover="this.style.background='var(--surface-2)';this.style.color='var(--text)';this.style.borderColor='var(--text-3)'"
+         onmouseout="this.style.background='var(--surface-3)';this.style.color='var(--text-2)';this.style.borderColor='var(--border-2)'">
+        &#9741; UI Preview
+      </a>
     <form method="POST" action="/reset" target="_top" style="margin:0" onsubmit="return confirm('Revert the demo? This wipes and reseeds the database and clears everything run so far.');">
       <button type="submit" id="revert-btn">&#8635; Revert back</button>
     </form>
+    </div>
   </div>
   <div id="decision-area"></div>
   <div id="notif-feed"><div class="empty">Nothing sent yet &mdash; run a case and notifications appear here in real time.</div></div>
@@ -802,6 +813,27 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/" or parsed.path == "":
             self._send_html(render_landing())
+            return
+        if parsed.path == "/preview":
+            # Serve the standalone "Executive Precision" UI preview built by
+            # Design file/ui_preview/build_dashboard_preview.py — wired in per explicit request.
+            # If the file hasn't been generated yet, tell the user how to build it.
+            if not os.path.isfile(PREVIEW_FILE):
+                self._send_html(
+                    "<h3>UI preview not built yet</h3>"
+                    "<p>Run <code>python3 \"Design file/ui_preview/build_dashboard_preview.py\"</code> "
+                    "from the repo root to generate it, then reload this page.</p>"
+                    "<p><a href='/' target='_top'>Back to composer</a></p>"
+                )
+                return
+            with open(PREVIEW_FILE, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self._no_cache()
+            self.end_headers()
+            self.wfile.write(data)
             return
         if parsed.path == "/queue/fragment":
             # AJAX endpoint — returns only the queue fragment HTML so the left panel can
@@ -1114,7 +1146,7 @@ def main():
     # renderable state, not an error.
     render_gate2_queue()
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Composer running at http://127.0.0.1:{PORT}  (Ctrl+C to stop)")
+    print(f"Composer running at http://127.0.0.1:{PORT}/preview  (Ctrl+C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
