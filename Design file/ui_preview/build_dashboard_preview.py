@@ -199,6 +199,13 @@ def _gate2_decision_case(key, accept_override_reason=None, reject_override_reaso
     if key == "6_change_request_stakeholder_flag":
         case6_comments.extend(comments)
 
+    # Restore the project to 'analysis' status in the DB so it correctly populates
+    # the Gate 2 queue in the preview page, rather than appearing as 'accepted'.
+    # This ensures that when the user clicks 'Hold' in the preview, the project
+    # is actually in the queue they are looking at.
+    connB.execute("UPDATE projects SET status = 'analysis' WHERE submission_id = ?", (rB["project"].submission_id,))
+    connB.commit()
+
 for key in SCENARIO_ORDER:
     if key == "1_accepted_aligned_low_capex_high_price":
         continue
@@ -238,7 +245,60 @@ CHANGE_CASE_EMAILS_UNFAVORABLE = de.CHANGE_CASE_EMAILS["unfavorable"]
 
 # ---------------------------------------------------------------------------
 # 2. Final live-state queries (case 1 + the one real post-acceptance update applied on top).
+#    After Case 1's run_scenario() reseeds the DB, Cases 3 and 4 are back to their trial-data
+#    statuses (rejected / pmo_review) instead of 'analysis'. Re-apply them here so the Queued
+#    Projects – Gate 2 section shows those two held submissions alongside the 5 pre-seeded batch
+#    rows — this is the demo's primary showcase of the batch queue workflow.
+#
+#    Case 6 (SUB-0007 / PRJ-2026-0842, Smart inventory forecasting agent) is intentionally NOT
+#    restored to 'analysis' here — its trial-data status is 'in_progress', so it correctly appears
+#    in Active Projects. The Case 6 Gate 2 demo lives in the Live Workflow pane and doesn't require
+#    the project to be physically at 'analysis' in the DB.
 # ---------------------------------------------------------------------------
+from src.db.repositories import write_audit_log as _write_audit_log, get_latest_agent_payload as _get_latest_agent_payload
+from src.db.trial_loader import load_trial_data as _load_trial_data
+
+def _restore_gate2_analysis_rows(conn_r):
+    """Re-insert Cases 3 (SUB-0004) and 4 (SUB-0005) at status='analysis' with mock agent5/agent6
+    payloads so they appear in get_gate2_queue(). Called after Case 1's run_scenario() reseeds the
+    DB (which resets these rows to their trial-data statuses of 'rejected' and 'pmo_review').
+    Case 6 (SUB-0007) is excluded — it should stay 'in_progress' so it appears in Active Projects."""
+    _projects, _idx = _load_trial_data()
+    _by_sub = {p.submission_id: p for p in _projects}
+    _by_pid = {p.project_id: p for p in _projects if p.project_id}
+
+    # Only Cases 3 and 4 are genuine Gate 2 "Hold" submissions in the preview queue.
+    # Case 6 (PRJ-2026-0842) stays at its trial-data status ('in_progress') to appear in
+    # Active Projects — its Gate 2 decision demo is shown in the Live Workflow pane only.
+    gate2_queue_cases = [
+        ("3_rejected_misaligned_business_direction",
+         {"margin_impact": "unclear", "citation": "New initiatives must demonstrate a credible path to 15% margin"},
+         {"verdict": "misaligned", "citation": "Consumer-facing new product lines outside existing verticals"}),
+        ("4_under_review_unknown_regulatory_risk",
+         {"margin_impact": "unclear", "citation": "New initiatives must demonstrate a credible path to 15% margin"},
+         {"verdict": "inconclusive", "citation": "Unknown or unquantified regulatory risk defaults to inconclusive"}),
+    ]
+    for scenario_key, a5_mock, a6_mock in gate2_queue_cases:
+        ref = _idx[scenario_key]
+        ref = ref[1] if isinstance(ref, list) else ref
+        proj = _by_pid.get(ref) or _by_sub.get(ref)
+        if proj is None:
+            continue
+        pid = proj.project_id or proj.submission_id
+        sub = proj.submission_id
+        # Set the row to analysis status (raw SQL — bypasses state-machine validation intentionally,
+        # same as the seed inserts that already place the 5 batch rows at analysis directly)
+        conn_r.execute("UPDATE projects SET status = 'analysis', updated_at = datetime('now') WHERE submission_id = ?", (sub,))
+        conn_r.commit()
+        # Seed agent5/6 payloads if not already present (idempotent)
+        if _get_latest_agent_payload(conn_r, pid, "agent5_business_impact") is None:
+            _write_audit_log(conn_r, pid, "agent5_business_impact", "analyze", a5_mock, 0)
+        if _get_latest_agent_payload(conn_r, pid, "agent6_knowledge_crosscheck") is None:
+            _write_audit_log(conn_r, pid, "agent6_knowledge_crosscheck", "crosscheck", a6_mock, 0)
+
+_restore_gate2_analysis_rows(conn)
+conn = de.get_connection()  # re-fetch after the status updates above
+
 active_rows = get_active_projects(conn)
 predictions = {r["project_id"]: predict_or_monitor(r) for r in active_rows}
 queue_rows = get_gate2_queue(conn)
