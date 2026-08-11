@@ -1567,5 +1567,14 @@ out_path = os.path.join(OUT_DIR, "dashboard_preview.html")
 with open(out_path, "w") as f:
     f.write(html_out)
 print("wrote", out_path)
+
+# Also written as index.html, byte-identical — static hosts (Vercel, GitHub Pages, etc.) serve
+# whatever's at index.html for the root URL; without it, visiting the deployed root 404s and only
+# /dashboard_preview.html works. Keeping this in the build script (not a one-off manual copy) means
+# it never goes stale on a future rebuild.
+index_path = os.path.join(OUT_DIR, "index.html")
+with open(index_path, "w") as f:
+    f.write(html_out)
+print("wrote", index_path)
 print("total_projects", total_projects, "portfolio_value", portfolio_value, "approved_rate", approved_rate,
       "avg_success", avg_success, "needs_attention", len(needs_attention))
