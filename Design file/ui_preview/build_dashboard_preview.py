@@ -199,6 +199,13 @@ def _gate2_decision_case(key, accept_override_reason=None, reject_override_reaso
     if key == "6_change_request_stakeholder_flag":
         case6_comments.extend(comments)
 
+    # Restore the project to 'analysis' status in the DB so it correctly populates
+    # the Gate 2 queue in the preview page, rather than appearing as 'accepted'.
+    # This ensures that when the user clicks 'Hold' in the preview, the project
+    # is actually in the queue they are looking at.
+    connB.execute("UPDATE projects SET status = 'analysis' WHERE submission_id = ?", (rB["project"].submission_id,))
+    connB.commit()
+
 for key in SCENARIO_ORDER:
     if key == "1_accepted_aligned_low_capex_high_price":
         continue
@@ -238,7 +245,60 @@ CHANGE_CASE_EMAILS_UNFAVORABLE = de.CHANGE_CASE_EMAILS["unfavorable"]
 
 # ---------------------------------------------------------------------------
 # 2. Final live-state queries (case 1 + the one real post-acceptance update applied on top).
+#    After Case 1's run_scenario() reseeds the DB, Cases 3 and 4 are back to their trial-data
+#    statuses (rejected / pmo_review) instead of 'analysis'. Re-apply them here so the Queued
+#    Projects – Gate 2 section shows those two held submissions alongside the 5 pre-seeded batch
+#    rows — this is the demo's primary showcase of the batch queue workflow.
+#
+#    Case 6 (SUB-0007 / PRJ-2026-0842, Smart inventory forecasting agent) is intentionally NOT
+#    restored to 'analysis' here — its trial-data status is 'in_progress', so it correctly appears
+#    in Active Projects. The Case 6 Gate 2 demo lives in the Live Workflow pane and doesn't require
+#    the project to be physically at 'analysis' in the DB.
 # ---------------------------------------------------------------------------
+from src.db.repositories import write_audit_log as _write_audit_log, get_latest_agent_payload as _get_latest_agent_payload
+from src.db.trial_loader import load_trial_data as _load_trial_data
+
+def _restore_gate2_analysis_rows(conn_r):
+    """Re-insert Cases 3 (SUB-0004) and 4 (SUB-0005) at status='analysis' with mock agent5/agent6
+    payloads so they appear in get_gate2_queue(). Called after Case 1's run_scenario() reseeds the
+    DB (which resets these rows to their trial-data statuses of 'rejected' and 'pmo_review').
+    Case 6 (SUB-0007) is excluded — it should stay 'in_progress' so it appears in Active Projects."""
+    _projects, _idx = _load_trial_data()
+    _by_sub = {p.submission_id: p for p in _projects}
+    _by_pid = {p.project_id: p for p in _projects if p.project_id}
+
+    # Only Cases 3 and 4 are genuine Gate 2 "Hold" submissions in the preview queue.
+    # Case 6 (PRJ-2026-0842) stays at its trial-data status ('in_progress') to appear in
+    # Active Projects — its Gate 2 decision demo is shown in the Live Workflow pane only.
+    gate2_queue_cases = [
+        ("3_rejected_misaligned_business_direction",
+         {"margin_impact": "unclear", "citation": "New initiatives must demonstrate a credible path to 15% margin"},
+         {"verdict": "misaligned", "citation": "Consumer-facing new product lines outside existing verticals"}),
+        ("4_under_review_unknown_regulatory_risk",
+         {"margin_impact": "unclear", "citation": "New initiatives must demonstrate a credible path to 15% margin"},
+         {"verdict": "inconclusive", "citation": "Unknown or unquantified regulatory risk defaults to inconclusive"}),
+    ]
+    for scenario_key, a5_mock, a6_mock in gate2_queue_cases:
+        ref = _idx[scenario_key]
+        ref = ref[1] if isinstance(ref, list) else ref
+        proj = _by_pid.get(ref) or _by_sub.get(ref)
+        if proj is None:
+            continue
+        pid = proj.project_id or proj.submission_id
+        sub = proj.submission_id
+        # Set the row to analysis status (raw SQL — bypasses state-machine validation intentionally,
+        # same as the seed inserts that already place the 5 batch rows at analysis directly)
+        conn_r.execute("UPDATE projects SET status = 'analysis', updated_at = datetime('now') WHERE submission_id = ?", (sub,))
+        conn_r.commit()
+        # Seed agent5/6 payloads if not already present (idempotent)
+        if _get_latest_agent_payload(conn_r, pid, "agent5_business_impact") is None:
+            _write_audit_log(conn_r, pid, "agent5_business_impact", "analyze", a5_mock, 0)
+        if _get_latest_agent_payload(conn_r, pid, "agent6_knowledge_crosscheck") is None:
+            _write_audit_log(conn_r, pid, "agent6_knowledge_crosscheck", "crosscheck", a6_mock, 0)
+
+_restore_gate2_analysis_rows(conn)
+conn = de.get_connection()  # re-fetch after the status updates above
+
 active_rows = get_active_projects(conn)
 predictions = {r["project_id"]: predict_or_monitor(r) for r in active_rows}
 queue_rows = get_gate2_queue(conn)
@@ -820,8 +880,14 @@ a{text-decoration:none;color:inherit}
               padding:4px;border-radius:4px;flex-shrink:0}
 #collapse-btn:hover{background:var(--surface-container)}
 .collapsed #collapse-btn{margin-left:0}
+#sidebar-open-btn{display:none;position:fixed;top:16px;left:0;z-index:200;
+                   background:var(--surface-container-lowest);border:1px solid var(--border-subtle);
+                   border-left:none;border-radius:0 6px 6px 0;padding:8px 10px;
+                   cursor:pointer;color:var(--on-surface-variant);font-size:14px;
+                   box-shadow:2px 0 8px rgba(0,0,0,.10);transition:background .15s,color .15s}
+#sidebar-open-btn:hover{{background:var(--surface-container);color:var(--on-surface)}}
 .nav-section{padding:12px 10px}
-.nav-label{font-size:10px;letter-spacing:.08em;color:var(--on-surface-variant);padding:4px 10px;white-space:nowrap}
+.nav-label{font-size:10px;letter-spacing:.08em;color:var(--on-surface-variant);padding:4px 10px;white-space:nowrap;font-weight:700}
 .collapsed .nav-label{display:none}
 .nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:var(--on-surface-variant);
           font-size:12.5px;white-space:nowrap;cursor:pointer;margin-bottom:2px}
@@ -948,7 +1014,7 @@ details.collapse-section{margin-bottom:16px}
 details.collapse-section summary{cursor:pointer;font-size:13px;font-weight:700;padding:10px 0;list-style:none;
     display:flex;align-items:center;gap:8px}
 details.collapse-section summary::-webkit-details-marker{display:none}
-details.collapse-section summary .chev{transition:transform .15s}
+details.collapse-section summary .chev{transition:transform .15s;font-size:36px;line-height:1}
 details.collapse-section[open] summary .chev{transform:rotate(90deg)}
 .case-btn{border:1px solid var(--border-subtle);background:#fff;border-radius:4px;padding:6px 12px;
           font-size:11px;font-family:inherit;cursor:pointer;margin-right:6px;margin-bottom:10px}
@@ -974,6 +1040,7 @@ html_out = f"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>{CSS}</style></head>
 <body>
+<button id="sidebar-open-btn" onclick="toggleSidebar()" title="Open sidebar">⟩⟩</button>
 <div id="sidebar">
   <div id="sb-head">
     <div class="logo">◈</div>
@@ -1008,7 +1075,7 @@ html_out = f"""<!DOCTYPE html>
 
     <div class="view active" id="view-dashboard">
       <div id="kpi-row">
-        <div class="kpi-card"><div class="label">TOTAL PROJECTS</div>
+        <div class="kpi-card"><div class="label">TOTAL PROJECTS IN PIPELINE</div>
           <div class="value">{total_projects}</div>
           <div class="foot">every status, whole portfolio</div></div>
         <div class="kpi-card"><div class="label">PORTFOLIO VALUE</div>
@@ -1132,7 +1199,9 @@ var docCounter = 0;
 function toggleSidebar(){{
   var sb = document.getElementById('sidebar');
   sb.classList.toggle('collapsed');
-  document.getElementById('collapse-btn').innerText = sb.classList.contains('collapsed') ? '⟩⟩' : '⟨⟨';
+  var isCollapsed = sb.classList.contains('collapsed');
+  document.getElementById('collapse-btn').innerText = isCollapsed ? '⟩⟩' : '⟨⟨';
+  document.getElementById('sidebar-open-btn').style.display = isCollapsed ? 'block' : 'none';
 }}
 var toastTimer = null;
 function toast(msg){{

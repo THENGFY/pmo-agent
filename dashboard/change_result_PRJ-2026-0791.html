@@ -137,7 +137,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
   <div class="step-body">
     <table class="diff-table">
       <tr><th>Field</th><th>Before</th><th></th><th>After</th></tr>
-      <tr><td colspan="4" style="color:var(--text-3);font-style:italic;padding:10px 8px">No field changes recorded.</td></tr>
+      <tr>
+          <td class="field-name">Expected launch</td>
+          <td class="before">2026-10-15</td>
+          <td class="arrow-col">&#8594;</td>
+          <td class="after">2026-09-15</td>
+        </tr><tr>
+          <td class="field-name">CAPEX ($)</td>
+          <td class="before">$60,000</td>
+          <td class="arrow-col">&#8594;</td>
+          <td class="after">$55,000</td>
+        </tr>
     </table>
   </div>
 </div>
@@ -149,7 +159,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
     <span class="step-title">Change Evaluator &mdash; verdict: favorable</span>
   </div>
   <div class="step-body">
-    <div class="reason-box"><b>Why it was auto-applied:</b> no governance-relevant field (timeline/cost/risk) changed</div>
+    <div class="reason-box"><b>Why it was auto-applied:</b> improved on: timeline, cost, no regression elsewhere</div>
   </div>
 </div>
 
@@ -163,9 +173,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
             <div class="nval">Auto-applied update — PRJ-2026-0791</div>
             <div class="nbody-text">An update to &quot;Customer support AI triage&quot; (PRJ-2026-0791) was auto-applied — no PMO action needed.
 
+  Expected launch: 2026-10-15 → 2026-09-15
+  CAPEX: $60,000 → $55,000
 
-
-Why this applied automatically: no governance-relevant field (timeline/cost/risk) changed.
+Why this applied automatically: improved on: timeline, cost, no regression elsewhere.
 
 — Automated PMO change management (Agent 12)</div>
           </div>
